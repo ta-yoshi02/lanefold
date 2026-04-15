@@ -10,6 +10,7 @@ import { InputController } from '../input/InputController';
 import { LanefoldRun } from '../runtime/LanefoldRun';
 import { bindTestingRun } from '../runtime/testingHooks';
 import type {
+  AttackEvent,
   Enemy,
   LossReason,
 } from '../types';
@@ -145,6 +146,8 @@ export class LanefoldScene extends Scene {
   private laneStepRects: Phaser.GameObjects.Rectangle[][] = [];
 
   private laneThreatTexts: Phaser.GameObjects.Text[] = [];
+
+  private laneAttackTexts: Phaser.GameObjects.Text[] = [];
 
   private breachSegments: Phaser.GameObjects.Rectangle[] = [];
 
@@ -336,6 +339,18 @@ export class LanefoldScene extends Scene {
         },
       ).setOrigin(0.5);
 
+      const attackText = this.add.text(
+        x,
+        this.layout.trackTop - 42,
+        'ATK 0',
+        {
+          color: '#8fc8c5',
+          fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+          fontSize: '13px',
+          fontStyle: '800',
+        },
+      ).setOrigin(0.5);
+
       const breachSegment = this.add.rectangle(
         x,
         this.breachY,
@@ -349,6 +364,7 @@ export class LanefoldScene extends Scene {
       trackBack.setDepth(1);
       laneLabel.setDepth(6);
       threatText.setDepth(6);
+      attackText.setDepth(6);
       breachSegment.setDepth(7);
       breachSegment.setStrokeStyle(2, 0xffd0bf, 0.35);
 
@@ -357,6 +373,7 @@ export class LanefoldScene extends Scene {
       this.laneStepRects.push(laneSteps);
       this.laneLabels.push(laneLabel);
       this.laneThreatTexts.push(threatText);
+      this.laneAttackTexts.push(attackText);
       this.breachSegments.push(breachSegment);
     }
 
@@ -760,6 +777,11 @@ export class LanefoldScene extends Scene {
       this.laneThreatTexts[lane]?.setAlpha(labelAlpha);
       this.laneThreatTexts[lane]?.setColor(this.threatTextColor(threat.level));
       this.laneThreatTexts[lane]?.setText(this.formatLaneThreat(threat));
+      this.laneAttackTexts[lane]?.setAlpha(mode === 'title' ? 0.26 : 0.8);
+      this.laneAttackTexts[lane]?.setText(`ATK ${this.getColumnAttackTotal(lane)}`);
+      this.laneAttackTexts[lane]?.setColor(
+        this.getColumnAttackTotal(lane) > 0 ? '#a8e6df' : '#536879',
+      );
 
       for (let step = 0; step < LANEFOLD_CONFIG.loss.breachProgress; step += 1) {
         const stepRect = this.laneStepRects[lane]?.[step];
@@ -808,6 +830,13 @@ export class LanefoldScene extends Scene {
       minTurns,
       frontEnemyId: frontEnemy.id,
     };
+  }
+
+  private getColumnAttackTotal(laneIndex: number): number {
+    return this.run.getState().board.reduce((total, row) => {
+      const tile = row[laneIndex];
+      return total + (tile ? tileDisplayValue(tile.rank) : 0);
+    }, 0);
   }
 
   private getGlobalThreat(): LaneThreat & { lane: number | null } {
@@ -865,6 +894,25 @@ export class LanefoldScene extends Scene {
     return `T-${threat.minTurns}`;
   }
 
+  private formatCombatSummary(attacks: AttackEvent[]): string {
+    if (attacks.length === 0) {
+      return 'no lane targets hit';
+    }
+
+    const totalDamage = attacks.reduce((total, attack) => total + attack.damage, 0);
+    const parts = attacks
+      .slice()
+      .sort((a, b) => a.lane - b.lane)
+      .slice(0, 2)
+      .map(
+        (attack) =>
+          `L${attack.lane + 1} ATK ${attack.laneDamage}: HP ${attack.hpBefore}->${attack.hpAfter}`,
+      );
+    const overflow = attacks.length > parts.length ? ` +${attacks.length - parts.length} lanes` : '';
+
+    return `${parts.join(' | ')}${overflow} // ${totalDamage} dmg`;
+  }
+
   private renderHud(): void {
     const mode = this.run.getMode();
     const state = this.run.getState();
@@ -910,7 +958,7 @@ export class LanefoldScene extends Scene {
       this.statusText.setAlpha(0.82);
     } else if (lastSummary?.changed) {
       this.statusText.setText(
-        `last move: +${lastSummary.scoreGain} // ${lastSummary.attacks.length} strikes // ${lastSummary.spawnedEnemies.length} spawns`,
+        `last move: ${this.formatCombatSummary(lastSummary.attacks)} // +${lastSummary.scoreGain}`,
       );
       this.statusText.setColor('#f5efdd');
       this.statusText.setAlpha(0.58);

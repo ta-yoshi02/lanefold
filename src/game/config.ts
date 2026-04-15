@@ -37,10 +37,7 @@ export const LANEFOLD_CONFIG = {
     killScoreFactor: 5,
   },
   combat: {
-    rowPower: [0.72, 0.86, 1.0, 1.18, 1.38],
-    attackScalar: 0.5,
     attackTimingMs: 140,
-    overflowIntoNextEnemy: true,
   },
   difficulty: {
     turnsPerStep: 5,
@@ -74,12 +71,6 @@ export const LANE_COUNT = LANEFOLD_CONFIG.lanes.count;
 
 export function tileDisplayValue(rank: number): number {
   return LANEFOLD_CONFIG.board.baseValue ** rank;
-}
-
-export function tileAttackPower(rank: number, row: number): number {
-  const rowPower = LANEFOLD_CONFIG.combat.rowPower[row] ?? 1;
-  const raw = tileDisplayValue(rank) * LANEFOLD_CONFIG.combat.attackScalar * rowPower;
-  return Math.max(1, Math.round(raw));
 }
 
 export function mergeScore(rank: number): number {

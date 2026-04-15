@@ -40,9 +40,10 @@ export interface TileSpawnEvent extends Position {
 export interface AttackEvent {
   lane: number;
   enemyId: number;
-  tileRank: number;
-  sourceRow: number;
+  laneDamage: number;
   damage: number;
+  hpBefore: number;
+  hpAfter: number;
   destroyed: boolean;
 }
 
@@ -127,6 +128,14 @@ export interface TextSnapshot {
     scoreGain: number;
     mergeCount: number;
     attackCount: number;
+    attacks: Array<{
+      lane: number;
+      laneDamage: number;
+      damage: number;
+      hpBefore: number;
+      hpAfter: number;
+      destroyed: boolean;
+    }>;
     spawnedEnemies: number;
     spawnedTile: TileSpawnEvent | null;
     breachedLane: number | null;

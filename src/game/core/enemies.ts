@@ -1,10 +1,9 @@
 import {
-  BOARD_HEIGHT,
   LANE_COUNT,
   LANEFOLD_CONFIG,
   difficultyTier,
   enemyKillScore,
-  tileAttackPower,
+  tileDisplayValue,
 } from '../config';
 import type {
   AdvanceResolution,
@@ -72,46 +71,35 @@ export function resolveCombat(board: Grid, lanes: Lanes): CombatResolution {
 
   for (let lane = 0; lane < LANE_COUNT; lane += 1) {
     const laneEnemies = nextLanes[lane] ?? [];
+    const laneDamage = board.reduce((total, row) => {
+      const tile = row[lane];
+      return total + (tile ? tileDisplayValue(tile.rank) : 0);
+    }, 0);
 
-    if (laneEnemies.length === 0) {
+    if (laneEnemies.length === 0 || laneDamage <= 0) {
       continue;
     }
 
-    for (let row = BOARD_HEIGHT - 1; row >= 0; row -= 1) {
-      const tile = board[row]?.[lane];
+    const target = laneEnemies[0];
+    const hpBefore = target.hp;
+    const appliedDamage = Math.min(laneDamage, hpBefore);
+    const hpAfter = hpBefore - appliedDamage;
 
-      if (!tile || laneEnemies.length === 0) {
-        continue;
-      }
+    target.hp = hpAfter;
+    attacks.push({
+      lane,
+      enemyId: target.id,
+      laneDamage,
+      damage: appliedDamage,
+      hpBefore,
+      hpAfter,
+      destroyed: hpAfter <= 0,
+    });
 
-      let remainingDamage = tileAttackPower(tile.rank, row);
-
-      while (remainingDamage > 0 && laneEnemies.length > 0) {
-        const target = laneEnemies[0];
-        const appliedDamage = Math.min(remainingDamage, target.hp);
-
-        target.hp -= appliedDamage;
-        attacks.push({
-          lane,
-          enemyId: target.id,
-          tileRank: tile.rank,
-          sourceRow: row,
-          damage: appliedDamage,
-          destroyed: target.hp <= 0,
-        });
-
-        remainingDamage -= appliedDamage;
-
-        if (target.hp <= 0) {
-          destroyedEnemyIds.push(target.id);
-          scoreGain += enemyKillScore(target.maxHp);
-          laneEnemies.shift();
-        }
-
-        if (!LANEFOLD_CONFIG.combat.overflowIntoNextEnemy) {
-          break;
-        }
-      }
+    if (target.hp <= 0) {
+      destroyedEnemyIds.push(target.id);
+      scoreGain += enemyKillScore(target.maxHp);
+      laneEnemies.shift();
     }
 
     nextLanes[lane] = laneEnemies;
