@@ -121,12 +121,12 @@ export class LanefoldScene extends Scene {
   private readonly run = new LanefoldRun();
 
   private readonly layout = {
-    boardTop: 430,
-    cellSize: 94,
+    boardTop: 452,
+    cellSize: 90,
     cellGap: 10,
-    trackTop: 194,
-    trackStepHeight: 26,
-    trackStepGap: 7,
+    trackTop: 188,
+    trackStepHeight: 25,
+    trackStepGap: 6,
     hudTop: 46,
     statusY: 978,
   };
@@ -407,31 +407,31 @@ export class LanefoldScene extends Scene {
       fontStyle: '500',
     });
 
-    this.turnText = this.add.text(72, this.layout.hudTop + 74, '', {
+    this.turnText = this.add.text(72, this.layout.hudTop + 60, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '32px',
+      fontSize: '28px',
       fontStyle: '800',
     });
 
-    this.pressureText = this.add.text(320, this.layout.hudTop + 74, '', {
+    this.pressureText = this.add.text(320, this.layout.hudTop + 60, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '32px',
+      fontSize: '28px',
       fontStyle: '800',
     });
 
-    this.difficultyText = this.add.text(640, this.layout.hudTop + 77, '', {
+    this.difficultyText = this.add.text(640, this.layout.hudTop + 63, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '22px',
+      fontSize: '20px',
       fontStyle: '700',
     });
 
-    this.scoreText = this.add.text(836, this.layout.hudTop + 77, '', {
+    this.scoreText = this.add.text(836, this.layout.hudTop + 63, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '22px',
+      fontSize: '20px',
       fontStyle: '700',
       align: 'right',
     }).setOrigin(1, 0);

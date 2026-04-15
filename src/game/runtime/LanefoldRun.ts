@@ -170,7 +170,7 @@ export class LanefoldRun {
       return {
         mode: 'title',
         note:
-          'rows increase downward, columns increase left to right, enemies descend by lane toward breach progress 5',
+          `rows increase downward, columns increase left to right, enemies descend by lane toward breach progress ${LANEFOLD_CONFIG.loss.breachProgress}`,
       };
     }
 
@@ -217,7 +217,7 @@ export class LanefoldRun {
           }
         : undefined,
       note:
-        'board uses top-left origin; rows 0-4, cols 0-4. Lane progress 0 is the spawn edge and 5 breaches the relay gate.',
+        `board uses top-left origin; rows 0-4, cols 0-4. Lane progress 0 is the spawn edge and ${LANEFOLD_CONFIG.loss.breachProgress} breaches the relay gate.`,
     };
   }
 

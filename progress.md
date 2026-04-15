@@ -13,9 +13,12 @@ Original prompt: Build an original browser game prototype in this repository for
 - 2026-04-15: Checked OpenAI docs for current Image API model support and confirmed image generation remained optional here; no live asset generation was attempted because `OPENAI_API_KEY` is unset locally.
 - 2026-04-15: Refined enemy/lane UI with compact discrete threat tracks above the board, explicit enemy `HP` and `T-` turns-to-breach labels, warning/critical lane colors, a stronger breach edge, smaller board cells, quieter move summary text, and clearer game-over lane cause.
 - 2026-04-15: Changed combat resolution from per-tile row-weighted strikes to one summed column attack per lane. Combat events now report lane attack total plus enemy HP before/after damage.
+- 2026-04-15: Started pacing adjustment to make enemies breach at progress 6 instead of 5, with a 6-step threat track and a slightly smaller/lower board layout. HP tuning and Tier behavior intentionally left unchanged.
+- 2026-04-15: Verified the pacing adjustment in browser. The required Playwright client still produced black WebGL canvas PNGs, so supplemental full-page Playwright screenshots were used for visual inspection. State output confirmed new enemies at `T-6`, lane breach at progress `6`, no console errors, and readable 6-step tracks after HUD spacing tweaks.
 
 ## TODO
 
 - Optional polish pass: add bespoke move tweens and stronger enemy hit reactions.
 - Optional balance pass: tune early enemy HP and spawn counts for a slightly longer first wave after more playtesting with the new threat-track UI.
 - Optional asset pass: if `OPENAI_API_KEY` becomes available, generate concept textures or enemy emblems under `output/imagegen/`.
+- No new blockers from the 6-turn pacing pass.

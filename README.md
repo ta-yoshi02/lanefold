@@ -68,7 +68,7 @@ Each valid move resolves in this order:
 5. New enemies spawn if the turn hits the current interval.
 6. A fresh relay tile spawns on the board.
 
-The run ends immediately if any enemy reaches breach progress `5`. Grid-lock loss is also enabled by default for testing.
+The run ends immediately if any enemy reaches breach progress `6`. Grid-lock loss is also enabled by default for testing.
 
 ## Tuning
 
