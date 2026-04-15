@@ -117,6 +117,7 @@ export interface TextSnapshot {
       hp: number;
       maxHp: number;
       progress: number;
+      turnsToBreach: number;
       kind: EnemyKind;
     }>
   >;
@@ -128,6 +129,7 @@ export interface TextSnapshot {
     attackCount: number;
     spawnedEnemies: number;
     spawnedTile: TileSpawnEvent | null;
+    breachedLane: number | null;
     lossReason: LossReason | null;
   };
   note: string;

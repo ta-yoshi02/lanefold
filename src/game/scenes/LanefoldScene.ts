@@ -17,6 +17,17 @@ import type {
 interface EnemyView {
   container: Phaser.GameObjects.Container;
   hpText: Phaser.GameObjects.Text;
+  turnsText: Phaser.GameObjects.Text;
+  priorityText: Phaser.GameObjects.Text;
+  card: Phaser.GameObjects.Rectangle;
+}
+
+type DangerLevel = 'clear' | 'watch' | 'warning' | 'critical' | 'breached';
+
+interface LaneThreat {
+  level: DangerLevel;
+  minTurns: number | null;
+  frontEnemyId: number | null;
 }
 
 function tilePalette(rank: number): { fill: number; text: string; stroke: number } {
@@ -61,16 +72,62 @@ function formatLoss(reason: LossReason | null): string {
   }
 }
 
+function remainingTurns(enemy: Enemy): number {
+  return Math.max(0, LANEFOLD_CONFIG.loss.breachProgress - enemy.progress);
+}
+
+function dangerLevelForTurns(turns: number | null): DangerLevel {
+  if (turns === null) {
+    return 'clear';
+  }
+
+  if (turns <= 0) {
+    return 'breached';
+  }
+
+  if (turns === 1) {
+    return 'critical';
+  }
+
+  if (turns <= 2) {
+    return 'warning';
+  }
+
+  if (turns <= 3) {
+    return 'watch';
+  }
+
+  return 'clear';
+}
+
+function dangerColor(level: DangerLevel): number {
+  switch (level) {
+    case 'breached':
+      return 0xff3f3f;
+    case 'critical':
+      return 0xff6f59;
+    case 'warning':
+      return 0xf3b562;
+    case 'watch':
+      return 0x84d6d1;
+    case 'clear':
+    default:
+      return 0x35516a;
+  }
+}
+
 export class LanefoldScene extends Scene {
   private readonly run = new LanefoldRun();
 
   private readonly layout = {
-    boardTop: 344,
-    cellSize: 108,
-    cellGap: 12,
-    laneTop: 180,
-    hudTop: 62,
-    dangerY: 1020,
+    boardTop: 430,
+    cellSize: 94,
+    cellGap: 10,
+    trackTop: 194,
+    trackStepHeight: 26,
+    trackStepGap: 7,
+    hudTop: 46,
+    statusY: 978,
   };
 
   private slotRects: Phaser.GameObjects.Rectangle[][] = [];
@@ -79,11 +136,21 @@ export class LanefoldScene extends Scene {
 
   private tileTexts: Phaser.GameObjects.Text[][] = [];
 
-  private laneBeams: Phaser.GameObjects.Rectangle[] = [];
+  private boardFrame!: Phaser.GameObjects.Rectangle;
 
-  private laneCaps: Phaser.GameObjects.Rectangle[] = [];
+  private laneColumnBacks: Phaser.GameObjects.Rectangle[] = [];
+
+  private laneTrackBacks: Phaser.GameObjects.Rectangle[] = [];
+
+  private laneStepRects: Phaser.GameObjects.Rectangle[][] = [];
+
+  private laneThreatTexts: Phaser.GameObjects.Text[] = [];
+
+  private breachSegments: Phaser.GameObjects.Rectangle[] = [];
 
   private laneLabels: Phaser.GameObjects.Text[] = [];
+
+  private breachText!: Phaser.GameObjects.Text;
 
   private enemyViews = new Map<number, EnemyView>();
 
@@ -119,8 +186,23 @@ export class LanefoldScene extends Scene {
     return BOARD_WIDTH * this.layout.cellSize + (BOARD_WIDTH - 1) * this.layout.cellGap;
   }
 
+  private get boardHeight(): number {
+    return BOARD_HEIGHT * this.layout.cellSize + (BOARD_HEIGHT - 1) * this.layout.cellGap;
+  }
+
   private get boardLeft(): number {
     return (LANEFOLD_CONFIG.viewport.width - this.boardWidth) / 2;
+  }
+
+  private get trackHeight(): number {
+    return (
+      LANEFOLD_CONFIG.loss.breachProgress * this.layout.trackStepHeight +
+      (LANEFOLD_CONFIG.loss.breachProgress - 1) * this.layout.trackStepGap
+    );
+  }
+
+  private get breachY(): number {
+    return this.layout.boardTop - 18;
   }
 
   public create(): void {
@@ -182,118 +264,166 @@ export class LanefoldScene extends Scene {
 
     this.add.rectangle(
       450,
-      700,
-      720,
-      860,
+      650,
+      640,
+      880,
       LANEFOLD_CONFIG.visuals.panelDark,
-      0.35,
+      0.32,
     ).setStrokeStyle(2, LANEFOLD_CONFIG.visuals.panelMid, 0.7);
 
     for (let lane = 0; lane < BOARD_WIDTH; lane += 1) {
       const x = this.getLaneCenter(lane);
-      const beam = this.add.rectangle(
+      const columnBack = this.add.rectangle(
         x,
-        (this.layout.laneTop + this.layout.dangerY) * 0.5,
-        this.layout.cellSize - 12,
-        this.layout.dangerY - this.layout.laneTop,
+        this.layout.boardTop + this.boardHeight * 0.5,
+        this.layout.cellSize + 4,
+        this.boardHeight + 8,
         LANEFOLD_CONFIG.visuals.laneBeam,
-        0.08,
+        0.055,
       );
 
-      const cap = this.add.rectangle(
+      const trackBack = this.add.rectangle(
         x,
-        this.layout.dangerY,
-        this.layout.cellSize - 18,
-        12,
-        LANEFOLD_CONFIG.visuals.laneDanger,
-        0.4,
+        this.layout.trackTop + this.trackHeight * 0.5,
+        this.layout.cellSize + 4,
+        this.trackHeight + 18,
+        0x0b1520,
+        0.74,
       );
 
-      beam.setDepth(1);
-      cap.setDepth(1);
-      this.laneBeams.push(beam);
-      this.laneCaps.push(cap);
+      const laneSteps: Phaser.GameObjects.Rectangle[] = [];
+
+      for (let step = 0; step < LANEFOLD_CONFIG.loss.breachProgress; step += 1) {
+        const stepY =
+          this.layout.trackTop +
+          step * (this.layout.trackStepHeight + this.layout.trackStepGap) +
+          this.layout.trackStepHeight * 0.5;
+        const stepRect = this.add.rectangle(
+          x,
+          stepY,
+          this.layout.cellSize - 16,
+          this.layout.trackStepHeight,
+          0x172535,
+          0.78,
+        );
+
+        stepRect.setStrokeStyle(1, 0x35516a, 0.72);
+        stepRect.setDepth(2);
+        laneSteps.push(stepRect);
+      }
 
       const laneLabel = this.add.text(
         x,
-        this.layout.boardTop - 26,
-        `L${lane + 1}`,
+        this.breachY - 38,
+        `LANE ${lane + 1}`,
         {
           color: LANEFOLD_CONFIG.visuals.textMuted,
           fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-          fontSize: '18px',
-          fontStyle: '600',
+          fontSize: '15px',
+          fontStyle: '800',
         },
       ).setOrigin(0.5);
 
+      const threatText = this.add.text(
+        x,
+        this.layout.trackTop - 22,
+        'CLEAR',
+        {
+          color: LANEFOLD_CONFIG.visuals.textMuted,
+          fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+          fontSize: '17px',
+          fontStyle: '800',
+        },
+      ).setOrigin(0.5);
+
+      const breachSegment = this.add.rectangle(
+        x,
+        this.breachY,
+        this.layout.cellSize - 2,
+        10,
+        LANEFOLD_CONFIG.visuals.laneDanger,
+        0.72,
+      );
+
+      columnBack.setDepth(1);
+      trackBack.setDepth(1);
       laneLabel.setDepth(6);
+      threatText.setDepth(6);
+      breachSegment.setDepth(7);
+      breachSegment.setStrokeStyle(2, 0xffd0bf, 0.35);
+
+      this.laneColumnBacks.push(columnBack);
+      this.laneTrackBacks.push(trackBack);
+      this.laneStepRects.push(laneSteps);
       this.laneLabels.push(laneLabel);
+      this.laneThreatTexts.push(threatText);
+      this.breachSegments.push(breachSegment);
     }
 
-    this.add.text(
+    this.breachText = this.add.text(
       450,
-      this.layout.dangerY + 28,
-      'RELAY GATE // breach ends the run',
+      this.breachY - 14,
+      'BREACH EDGE // enemy crossing this line ends the run',
       {
         color: '#ffb29d',
         fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-        fontSize: '18px',
-        fontStyle: '600',
+        fontSize: '16px',
+        fontStyle: '800',
         letterSpacing: 1,
       },
-    ).setOrigin(0.5).setAlpha(0.8);
+    ).setOrigin(0.5).setAlpha(0.9).setDepth(8);
   }
 
   private createHud(): void {
-    this.add.text(60, 36, 'LANEFOLD', {
+    this.add.text(72, 34, 'LANEFOLD', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '44px',
+      fontSize: '42px',
       fontStyle: '800',
       letterSpacing: 2,
     });
 
-    this.add.text(62, 90, 'slide, merge, realign the lanes', {
+    this.add.text(74, 84, 'slide, merge, realign the lanes', {
       color: LANEFOLD_CONFIG.visuals.textMuted,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '20px',
+      fontSize: '18px',
       fontStyle: '500',
     });
 
-    this.scoreText = this.add.text(60, this.layout.hudTop + 66, '', {
+    this.turnText = this.add.text(72, this.layout.hudTop + 74, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '24px',
+      fontSize: '32px',
+      fontStyle: '800',
+    });
+
+    this.pressureText = this.add.text(320, this.layout.hudTop + 74, '', {
+      color: LANEFOLD_CONFIG.visuals.textMain,
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '32px',
+      fontStyle: '800',
+    });
+
+    this.difficultyText = this.add.text(640, this.layout.hudTop + 77, '', {
+      color: LANEFOLD_CONFIG.visuals.textMain,
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '22px',
       fontStyle: '700',
     });
 
-    this.turnText = this.add.text(300, this.layout.hudTop + 66, '', {
+    this.scoreText = this.add.text(836, this.layout.hudTop + 77, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '24px',
-      fontStyle: '700',
-    });
-
-    this.difficultyText = this.add.text(500, this.layout.hudTop + 66, '', {
-      color: LANEFOLD_CONFIG.visuals.textMain,
-      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '24px',
-      fontStyle: '700',
-    });
-
-    this.pressureText = this.add.text(836, this.layout.hudTop + 66, '', {
-      color: LANEFOLD_CONFIG.visuals.textMain,
-      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '24px',
+      fontSize: '22px',
       fontStyle: '700',
       align: 'right',
     }).setOrigin(1, 0);
 
-    this.statusText = this.add.text(450, 288, '', {
+    this.statusText = this.add.text(450, this.layout.statusY, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '22px',
-      fontStyle: '600',
+      fontSize: '17px',
+      fontStyle: '700',
       align: 'center',
     }).setOrigin(0.5);
 
@@ -307,6 +437,17 @@ export class LanefoldScene extends Scene {
   }
 
   private createBoard(): void {
+    this.boardFrame = this.add.rectangle(
+      450,
+      this.layout.boardTop + this.boardHeight * 0.5,
+      this.boardWidth + 18,
+      this.boardHeight + 18,
+      0x000000,
+      0,
+    );
+    this.boardFrame.setStrokeStyle(4, 0xf7f0df, 0.16);
+    this.boardFrame.setDepth(2);
+
     for (let row = 0; row < BOARD_HEIGHT; row += 1) {
       const slotRow: Phaser.GameObjects.Rectangle[] = [];
       const tileRow: Phaser.GameObjects.Rectangle[] = [];
@@ -341,7 +482,7 @@ export class LanefoldScene extends Scene {
 
         const label = this.add.text(x, y, '', {
           fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-          fontSize: '34px',
+          fontSize: '31px',
           fontStyle: '800',
           color: '#f7f0df',
         });
@@ -565,6 +706,7 @@ export class LanefoldScene extends Scene {
 
   private renderScene(): void {
     this.renderBackdropMotion();
+    this.renderThreatTracks();
     this.renderHud();
     this.renderBoardState();
     this.renderEnemies();
@@ -578,39 +720,173 @@ export class LanefoldScene extends Scene {
     this.backgroundOrbs[1]?.setPosition(770, 230 + Math.sin(t * 0.45) * 10);
     this.backgroundOrbs[2]?.setPosition(260 + Math.cos(t * 0.35) * 18, 1060);
     this.titleGlow.setScale(1 + Math.sin(t * 0.8) * 0.02);
+  }
 
-    for (let lane = 0; lane < this.laneBeams.length; lane += 1) {
+  private renderThreatTracks(): void {
+    const mode = this.run.getMode();
+    const state = this.run.getState();
+
+    for (let lane = 0; lane < BOARD_WIDTH; lane += 1) {
+      const threat = this.getLaneThreat(lane);
+      const color = dangerColor(threat.level);
       const pulse = this.run.getLanePulse(lane);
-      this.laneBeams[lane]?.setFillStyle(
-        LANEFOLD_CONFIG.visuals.laneBeam,
-        0.08 + pulse * 0.18,
+      const alphaBoost = threat.level === 'critical' || threat.level === 'breached' ? 0.16 : 0;
+      const labelAlpha = mode === 'title' ? 0.32 : 1;
+
+      this.laneColumnBacks[lane]?.setFillStyle(
+        color,
+        mode === 'title' ? 0.035 : 0.06 + alphaBoost + pulse * 0.1,
       );
-      this.laneCaps[lane]?.setFillStyle(
-        LANEFOLD_CONFIG.visuals.laneDanger,
-        0.28 + pulse * 0.38,
+      this.laneTrackBacks[lane]?.setFillStyle(
+        0x0b1520,
+        mode === 'title' ? 0.52 : 0.74,
       );
+      this.laneTrackBacks[lane]?.setStrokeStyle(2, color, 0.28 + pulse * 0.26);
+      this.breachSegments[lane]?.setFillStyle(
+        color,
+        mode === 'title' ? 0.26 : 0.58 + alphaBoost + pulse * 0.22,
+      );
+      this.breachSegments[lane]?.setStrokeStyle(
+        threat.level === 'critical' || threat.level === 'breached' ? 3 : 2,
+        color,
+        0.78,
+      );
+      this.laneLabels[lane]?.setColor(
+        threat.level === 'critical' || threat.level === 'breached'
+          ? '#ffe1d6'
+          : LANEFOLD_CONFIG.visuals.textMuted,
+      );
+      this.laneLabels[lane]?.setAlpha(labelAlpha);
+      this.laneThreatTexts[lane]?.setAlpha(labelAlpha);
+      this.laneThreatTexts[lane]?.setColor(this.threatTextColor(threat.level));
+      this.laneThreatTexts[lane]?.setText(this.formatLaneThreat(threat));
+
+      for (let step = 0; step < LANEFOLD_CONFIG.loss.breachProgress; step += 1) {
+        const stepRect = this.laneStepRects[lane]?.[step];
+        const stepHasEnemy = (state.lanes[lane] ?? []).some(
+          (enemy) =>
+            Math.min(LANEFOLD_CONFIG.loss.breachProgress - 1, enemy.progress) === step,
+        );
+        const nearEdge = step === LANEFOLD_CONFIG.loss.breachProgress - 1;
+        const stepAlpha = stepHasEnemy ? 0.88 : nearEdge ? 0.48 : 0.32;
+
+        stepRect?.setFillStyle(
+          stepHasEnemy ? color : nearEdge ? 0x3b2027 : 0x172535,
+          mode === 'title' ? stepAlpha * 0.45 : stepAlpha,
+        );
+        stepRect?.setStrokeStyle(
+          nearEdge ? 2 : 1,
+          nearEdge ? LANEFOLD_CONFIG.visuals.laneDanger : color,
+          nearEdge ? 0.8 : 0.44,
+        );
+      }
     }
+
+    const globalThreat = this.getGlobalThreat();
+    this.breachText.setColor(this.threatTextColor(globalThreat.level));
+    this.breachText.setAlpha(mode === 'title' ? 0.45 : 0.86);
+  }
+
+  private getLaneThreat(laneIndex: number): LaneThreat {
+    const enemies = this.run.getState().lanes[laneIndex] ?? [];
+
+    if (enemies.length === 0) {
+      return {
+        level: 'clear',
+        minTurns: null,
+        frontEnemyId: null,
+      };
+    }
+
+    const frontEnemy = enemies.reduce((front, enemy) =>
+      enemy.progress > front.progress ? enemy : front,
+    );
+    const minTurns = remainingTurns(frontEnemy);
+
+    return {
+      level: dangerLevelForTurns(minTurns),
+      minTurns,
+      frontEnemyId: frontEnemy.id,
+    };
+  }
+
+  private getGlobalThreat(): LaneThreat & { lane: number | null } {
+    let bestThreat: (LaneThreat & { lane: number }) | null = null;
+
+    for (let lane = 0; lane < BOARD_WIDTH; lane += 1) {
+      const threat = this.getLaneThreat(lane);
+
+      if (threat.minTurns === null) {
+        continue;
+      }
+
+      if (!bestThreat || threat.minTurns < (bestThreat.minTurns ?? Number.POSITIVE_INFINITY)) {
+        bestThreat = {
+          ...threat,
+          lane,
+        };
+      }
+    }
+
+    return (
+      bestThreat ?? {
+        level: 'clear',
+        minTurns: null,
+        frontEnemyId: null,
+        lane: null,
+      }
+    );
+  }
+
+  private threatTextColor(level: DangerLevel): string {
+    switch (level) {
+      case 'breached':
+      case 'critical':
+        return '#ffd2c7';
+      case 'warning':
+        return '#f7d69a';
+      case 'watch':
+        return '#b6ebe8';
+      case 'clear':
+      default:
+        return LANEFOLD_CONFIG.visuals.textMuted;
+    }
+  }
+
+  private formatLaneThreat(threat: LaneThreat): string {
+    if (threat.minTurns === null) {
+      return 'CLEAR';
+    }
+
+    if (threat.minTurns <= 0) {
+      return 'BREACH';
+    }
+
+    return `T-${threat.minTurns}`;
   }
 
   private renderHud(): void {
     const mode = this.run.getMode();
     const state = this.run.getState();
     const hudAlpha = mode === 'title' ? 0 : 1;
+    const globalThreat = this.getGlobalThreat();
 
-    this.scoreText.setText(`Score ${state.score}`);
-    this.turnText.setText(`Turn ${state.turn}`);
+    this.turnText.setText(`TURN ${state.turn}`);
+    this.pressureText.setText(
+      globalThreat.lane === null
+        ? 'DANGER CLEAR'
+        : `DANGER L${globalThreat.lane + 1} T-${globalThreat.minTurns}`,
+    );
     this.difficultyText.setText(`Tier ${state.difficulty}`);
-    this.pressureText.setText(`Pressure ${state.pressure}`);
-    this.scoreText.setAlpha(hudAlpha);
+    this.scoreText.setText(`Score ${state.score}`);
     this.turnText.setAlpha(hudAlpha);
-    this.difficultyText.setAlpha(hudAlpha);
     this.pressureText.setAlpha(hudAlpha);
-    this.laneLabels.forEach((label) => {
-      label.setAlpha(mode === 'title' ? 0.28 : 0.8);
-    });
+    this.difficultyText.setAlpha(hudAlpha);
+    this.scoreText.setAlpha(mode === 'title' ? 0 : 0.72);
+    this.pressureText.setColor(this.threatTextColor(globalThreat.level));
 
     if (mode === 'title') {
-      this.statusText.setText('Shape the relay grid before the lanes flood.');
+      this.statusText.setText('Compact lane tracks show HP and turns-to-breach.');
       this.hintText.setText('Enter or tap Start Run. Use F for fullscreen.');
       return;
     }
@@ -627,21 +903,21 @@ export class LanefoldScene extends Scene {
     if (lastSummary?.invalidMove && invalidAlpha > 0) {
       this.statusText.setText('No shift on that vector.');
       this.statusText.setColor('#ffbf9f');
-      this.statusText.setAlpha(0.7 + invalidAlpha * 0.3);
+      this.statusText.setAlpha(0.54 + invalidAlpha * 0.22);
     } else if (lastSummary?.lossReason) {
       this.statusText.setText(formatLoss(lastSummary.lossReason));
       this.statusText.setColor('#ffbf9f');
-      this.statusText.setAlpha(1);
+      this.statusText.setAlpha(0.82);
     } else if (lastSummary?.changed) {
       this.statusText.setText(
-        `+${lastSummary.scoreGain} score // ${lastSummary.attacks.length} strikes // ${lastSummary.spawnedEnemies.length} intruders`,
+        `last move: +${lastSummary.scoreGain} // ${lastSummary.attacks.length} strikes // ${lastSummary.spawnedEnemies.length} spawns`,
       );
       this.statusText.setColor('#f5efdd');
-      this.statusText.setAlpha(0.95);
+      this.statusText.setAlpha(0.58);
     } else {
-      this.statusText.setText('Push the matrix. Each column fires after the slide.');
+      this.statusText.setText('Each board column fires into the same numbered lane.');
       this.statusText.setColor('#f5efdd');
-      this.statusText.setAlpha(0.85);
+      this.statusText.setAlpha(0.62);
     }
 
     this.hintText.setText(
@@ -651,6 +927,17 @@ export class LanefoldScene extends Scene {
 
   private renderBoardState(): void {
     const state = this.run.getState();
+    const globalThreat = this.getGlobalThreat();
+    const frameColor =
+      globalThreat.level === 'critical' || globalThreat.level === 'breached'
+        ? LANEFOLD_CONFIG.visuals.laneDanger
+        : 0xf7f0df;
+
+    this.boardFrame.setStrokeStyle(
+      globalThreat.level === 'critical' || globalThreat.level === 'breached' ? 5 : 4,
+      frameColor,
+      globalThreat.level === 'clear' ? 0.16 : 0.34,
+    );
 
     for (let row = 0; row < BOARD_HEIGHT; row += 1) {
       for (let col = 0; col < BOARD_WIDTH; col += 1) {
@@ -685,10 +972,19 @@ export class LanefoldScene extends Scene {
   private renderEnemies(): void {
     const state = this.run.getState();
     const activeEnemyIds = new Set<number>();
-    const travel = this.layout.dangerY - this.layout.laneTop;
-    const idle = this.run.getIdleMs() * 0.001;
 
     state.lanes.forEach((lane, laneIndex) => {
+      const slotCounts = new Map<number, number>();
+      const slotTotals = new Map<number, number>();
+
+      lane.forEach((enemy) => {
+        const slot = Math.min(
+          LANEFOLD_CONFIG.loss.breachProgress - 1,
+          Math.max(0, enemy.progress),
+        );
+        slotTotals.set(slot, (slotTotals.get(slot) ?? 0) + 1);
+      });
+
       lane.forEach((enemy) => {
         activeEnemyIds.add(enemy.id);
 
@@ -699,15 +995,33 @@ export class LanefoldScene extends Scene {
           this.enemyViews.set(enemy.id, view);
         }
 
+        const slot = Math.min(
+          LANEFOLD_CONFIG.loss.breachProgress - 1,
+          Math.max(0, enemy.progress),
+        );
+        const slotIndex = slotCounts.get(slot) ?? 0;
+        const slotTotal = slotTotals.get(slot) ?? 1;
+        const laneThreat = this.getLaneThreat(laneIndex);
+        const isFront = laneThreat.frontEnemyId === enemy.id;
+        const threatColor = dangerColor(dangerLevelForTurns(remainingTurns(enemy)));
         const pulse = this.run.getEnemyPulse(enemy.id);
-        const bob = Math.sin(idle * 2 + enemy.id) * 5;
         const x = this.getLaneCenter(laneIndex);
-        const y = this.layout.laneTop + (enemy.progress / LANEFOLD_CONFIG.loss.breachProgress) * travel + bob;
+        const xOffset = (slotIndex - (slotTotal - 1) / 2) * 16;
+        const y =
+          this.layout.trackTop +
+          slot * (this.layout.trackStepHeight + this.layout.trackStepGap) +
+          this.layout.trackStepHeight * 0.5;
 
-        view.container.setPosition(x, y);
-        view.container.setScale(1 + pulse * 0.12);
-        view.container.setAlpha(0.9 + pulse * 0.1);
-        view.hpText.setText(`${enemy.hp}`);
+        slotCounts.set(slot, slotIndex + 1);
+        view.container.setPosition(x + xOffset, y);
+        view.container.setScale((isFront ? 1 : 0.86) + pulse * 0.08);
+        view.container.setAlpha(isFront ? 1 : 0.78);
+        view.card.setFillStyle(0x0f1a24, isFront ? 0.96 : 0.86);
+        view.card.setStrokeStyle(isFront ? 2 : 1, threatColor, isFront ? 0.95 : 0.58);
+        view.hpText.setText(`HP ${enemy.hp}`);
+        view.turnsText.setText(`T-${remainingTurns(enemy)}`);
+        view.turnsText.setColor(this.threatTextColor(dangerLevelForTurns(remainingTurns(enemy))));
+        view.priorityText.setVisible(isFront && remainingTurns(enemy) <= 2);
       });
     });
 
@@ -723,30 +1037,55 @@ export class LanefoldScene extends Scene {
 
   private createEnemyView(enemy: Enemy): EnemyView {
     const colors = enemyColors(enemy.kind);
+    const card = this.add.rectangle(0, 0, 78, 34, 0x0f1a24, 0.96);
     const body =
       enemy.kind === 'prism'
-        ? this.add.rectangle(0, 0, 44, 44, colors.body, 0.96).setAngle(45)
+        ? this.add.rectangle(-29, 0, 16, 16, colors.body, 0.96).setAngle(45)
         : enemy.kind === 'blob'
-          ? this.add.ellipse(0, 0, 58, 46, colors.body, 0.96)
-          : this.add.ellipse(0, 0, 62, 36, colors.body, 0.96);
+          ? this.add.ellipse(-29, 0, 20, 16, colors.body, 0.96)
+          : this.add.ellipse(-29, 0, 22, 14, colors.body, 0.96);
 
     const core =
       enemy.kind === 'prism'
-        ? this.add.rectangle(0, 0, 10, 26, colors.core, 0.94)
+        ? this.add.rectangle(-29, 0, 4, 12, colors.core, 0.94)
         : enemy.kind === 'blob'
-          ? this.add.ellipse(0, -2, 20, 20, colors.core, 0.92)
-          : this.add.rectangle(0, 0, 16, 16, colors.core, 0.95);
+          ? this.add.ellipse(-29, -1, 7, 7, colors.core, 0.92)
+          : this.add.rectangle(-29, 0, 7, 7, colors.core, 0.95);
 
-    const hpText = this.add.text(0, 34, `${enemy.hp}`, {
+    const hpText = this.add.text(-12, -8, `HP ${enemy.hp}`, {
       color: '#f7f0df',
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '20px',
+      fontSize: '12px',
       fontStyle: '700',
+    }).setOrigin(0, 0.5);
+
+    const turnsText = this.add.text(-12, 8, `T-${remainingTurns(enemy)}`, {
+      color: '#f7d69a',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '12px',
+      fontStyle: '800',
+    }).setOrigin(0, 0.5);
+
+    const priorityText = this.add.text(0, -26, 'KILL', {
+      color: '#ffdfd4',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '10px',
+      fontStyle: '900',
+      backgroundColor: '#7a1f22',
+      padding: { x: 5, y: 1 },
     }).setOrigin(0.5);
 
-    const container = this.add.container(0, 0, [body, core, hpText]);
-    container.setDepth(2);
-    return { container, hpText };
+    card.setStrokeStyle(1, 0x63d0c7, 0.7);
+    const container = this.add.container(0, 0, [
+      card,
+      body,
+      core,
+      hpText,
+      turnsText,
+      priorityText,
+    ]);
+    container.setDepth(5);
+    return { container, hpText, turnsText, priorityText, card };
   }
 
   private renderOverlays(): void {
@@ -760,9 +1099,19 @@ export class LanefoldScene extends Scene {
       return;
     }
 
-    this.gameOverTitle.setText(formatLoss(state.lossReason));
+    const breachedLane = this.run.getLastSummary()?.breachedLane;
+    const lossTitle =
+      state.lossReason === 'lane_breach' && breachedLane !== null && breachedLane !== undefined
+        ? `Lane ${breachedLane + 1} breached`
+        : formatLoss(state.lossReason);
+    const lossCause =
+      state.lossReason === 'lane_breach' && breachedLane !== null && breachedLane !== undefined
+        ? `An enemy crossed the breach edge in lane ${breachedLane + 1}.`
+        : 'The relay grid has no safe shift left.';
+
+    this.gameOverTitle.setText(lossTitle);
     this.gameOverBody.setText(
-      `Score ${state.score}\nTurn ${state.turn}\nDifficulty ${state.difficulty}\nPressure ${state.pressure}`,
+      `${lossCause}\nScore ${state.score} // Turn ${state.turn}\nTier ${state.difficulty} // Pressure ${state.pressure}`,
     );
   }
 }

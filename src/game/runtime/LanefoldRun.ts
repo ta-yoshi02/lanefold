@@ -182,6 +182,7 @@ export class LanefoldRun {
         hp: enemy.hp,
         maxHp: enemy.maxHp,
         progress: enemy.progress,
+        turnsToBreach: Math.max(0, LANEFOLD_CONFIG.loss.breachProgress - enemy.progress),
         kind: enemy.kind,
       })),
     );
@@ -203,6 +204,7 @@ export class LanefoldRun {
             attackCount: this.lastSummary.attacks.length,
             spawnedEnemies: this.lastSummary.spawnedEnemies.length,
             spawnedTile: this.lastSummary.spawnedTile,
+            breachedLane: this.lastSummary.breachedLane,
             lossReason: this.lastSummary.lossReason,
           }
         : undefined,

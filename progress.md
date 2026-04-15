@@ -11,9 +11,10 @@ Original prompt: Build an original browser game prototype in this repository for
 - 2026-04-15: Verified title screen, gameplay, game over, restart, and swipe interactions with Playwright. Used direct page screenshots because the bundled client's canvas capture path produced black PNGs under the current browser/WebGL setup, while page screenshots rendered correctly.
 - 2026-04-15: Fixed the only browser-console issue from verification by adding an original SVG favicon.
 - 2026-04-15: Checked OpenAI docs for current Image API model support and confirmed image generation remained optional here; no live asset generation was attempted because `OPENAI_API_KEY` is unset locally.
+- 2026-04-15: Refined enemy/lane UI with compact discrete threat tracks above the board, explicit enemy `HP` and `T-` turns-to-breach labels, warning/critical lane colors, a stronger breach edge, smaller board cells, quieter move summary text, and clearer game-over lane cause.
 
 ## TODO
 
 - Optional polish pass: add bespoke move tweens and stronger enemy hit reactions.
-- Optional balance pass: tune early enemy HP and spawn counts for a slightly longer first wave.
+- Optional balance pass: tune early enemy HP and spawn counts for a slightly longer first wave after more playtesting with the new threat-track UI.
 - Optional asset pass: if `OPENAI_API_KEY` becomes available, generate concept textures or enemy emblems under `output/imagegen/`.
