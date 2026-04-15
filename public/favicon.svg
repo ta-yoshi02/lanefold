@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Lanefold icon">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1b2b3c" />
+      <stop offset="100%" stop-color="#091018" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#bg)" />
+  <rect x="12" y="14" width="8" height="36" rx="3" fill="#63d0c7" opacity="0.75" />
+  <rect x="28" y="14" width="8" height="36" rx="3" fill="#f3b562" opacity="0.9" />
+  <rect x="44" y="14" width="8" height="36" rx="3" fill="#63d0c7" opacity="0.75" />
+  <path d="M16 20h32" stroke="#f7f0df" stroke-linecap="round" stroke-width="3" opacity="0.7" />
+  <path d="M16 32h32" stroke="#f7f0df" stroke-linecap="round" stroke-width="3" opacity="0.85" />
+  <path d="M16 44h32" stroke="#f7f0df" stroke-linecap="round" stroke-width="3" opacity="0.7" />
+</svg>
