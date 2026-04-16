@@ -6,13 +6,18 @@ import {
   LANEFOLD_CONFIG,
   tileDisplayValue,
 } from '../config';
+import { computeLaneAttackProfile } from '../core/enemies';
+import { normalTurnCount } from '../core/progression';
 import { InputController } from '../input/InputController';
 import { LanefoldRun } from '../runtime/LanefoldRun';
 import { bindTestingRun } from '../runtime/testingHooks';
 import type {
   AttackEvent,
+  BossState,
   Enemy,
   LossReason,
+  RewardDefinition,
+  RunPhase,
 } from '../types';
 
 interface EnemyView {
@@ -52,6 +57,8 @@ function tilePalette(rank: number): { fill: number; text: string; stroke: number
 
 function enemyColors(kind: Enemy['kind']): { body: number; core: number } {
   switch (kind) {
+    case 'elite':
+      return { body: 0xffc857, core: 0x28180b };
     case 'blob':
       return { body: 0xff8f6b, core: 0xffe7bf };
     case 'prism':
@@ -73,8 +80,28 @@ function formatLoss(reason: LossReason | null): string {
   }
 }
 
+function formatPhase(phase: RunPhase): string {
+  switch (phase) {
+    case 'warning':
+      return 'WARNING';
+    case 'elite':
+      return 'ELITE';
+    case 'boss':
+      return 'BOSS';
+    case 'reward':
+      return 'REWARD';
+    case 'normal':
+    default:
+      return 'NORMAL';
+  }
+}
+
 function remainingTurns(enemy: Enemy): number {
   return Math.max(0, LANEFOLD_CONFIG.loss.breachProgress - enemy.progress);
+}
+
+function bossRemainingTurns(boss: BossState): number {
+  return Math.max(0, LANEFOLD_CONFIG.loss.breachProgress - boss.progress);
 }
 
 function dangerLevelForTurns(turns: number | null): DangerLevel {
@@ -169,6 +196,18 @@ export class LanefoldScene extends Scene {
 
   private hintText!: Phaser.GameObjects.Text;
 
+  private utilityBack!: Phaser.GameObjects.Rectangle;
+
+  private utilityText!: Phaser.GameObjects.Text;
+
+  private bossContainer!: Phaser.GameObjects.Container;
+
+  private bossBody!: Phaser.GameObjects.Rectangle;
+
+  private bossHpText!: Phaser.GameObjects.Text;
+
+  private bossMetaText!: Phaser.GameObjects.Text;
+
   private titleContainer!: Phaser.GameObjects.Container;
 
   private gameOverContainer!: Phaser.GameObjects.Container;
@@ -176,6 +215,20 @@ export class LanefoldScene extends Scene {
   private gameOverTitle!: Phaser.GameObjects.Text;
 
   private gameOverBody!: Phaser.GameObjects.Text;
+
+  private rewardContainer!: Phaser.GameObjects.Container;
+
+  private rewardTitle!: Phaser.GameObjects.Text;
+
+  private rewardSubtitle!: Phaser.GameObjects.Text;
+
+  private rewardCards: Array<{
+    container: Phaser.GameObjects.Container;
+    body: Phaser.GameObjects.Rectangle;
+    categoryText: Phaser.GameObjects.Text;
+    nameText: Phaser.GameObjects.Text;
+    descriptionText: Phaser.GameObjects.Text;
+  }> = [];
 
   private titleGlow!: Phaser.GameObjects.Ellipse;
 
@@ -215,6 +268,7 @@ export class LanefoldScene extends Scene {
     this.createBackdrop();
     this.createHud();
     this.createBoard();
+    this.createBossView();
     this.createOverlayPanels();
 
     new InputController(this, {
@@ -224,6 +278,12 @@ export class LanefoldScene extends Scene {
       },
       onConfirm: () => {
         this.handleConfirm();
+      },
+      onRewardChoice: (index) => {
+        this.handleRewardChoice(index);
+      },
+      onUtility: () => {
+        this.handleUtility();
       },
       onRestart: () => {
         this.restartRun();
@@ -428,13 +488,28 @@ export class LanefoldScene extends Scene {
       fontStyle: '700',
     });
 
-    this.scoreText = this.add.text(836, this.layout.hudTop + 63, '', {
+    this.scoreText = this.add.text(836, this.layout.hudTop + 34, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
       fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
-      fontSize: '20px',
+      fontSize: '18px',
       fontStyle: '700',
       align: 'right',
     }).setOrigin(1, 0);
+
+    this.utilityBack = this.add.rectangle(722, 38, 250, 36, 0x10202b, 0.78);
+    this.utilityBack.setStrokeStyle(2, 0x365269, 0.72);
+    this.utilityBack.setInteractive({ useHandCursor: true });
+    this.utilityBack.on('pointerup', () => {
+      this.handleUtility();
+    });
+
+    this.utilityText = this.add.text(722, 38, 'UTILITY EMPTY', {
+      color: LANEFOLD_CONFIG.visuals.textMuted,
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '15px',
+      fontStyle: '800',
+      align: 'center',
+    }).setOrigin(0.5);
 
     this.statusText = this.add.text(450, this.layout.statusY, '', {
       color: LANEFOLD_CONFIG.visuals.textMain,
@@ -516,6 +591,35 @@ export class LanefoldScene extends Scene {
       this.tileRects.push(tileRow);
       this.tileTexts.push(textRow);
     }
+  }
+
+  private createBossView(): void {
+    const width =
+      this.getLaneCenter(3) - this.getLaneCenter(1) + this.layout.cellSize - 12;
+    this.bossContainer = this.add.container(this.getLaneCenter(2), this.layout.trackTop);
+    this.bossBody = this.add.rectangle(0, 0, width, 52, 0x1b1016, 0.96);
+    this.bossBody.setStrokeStyle(3, LANEFOLD_CONFIG.visuals.accentAlert, 0.86);
+
+    const core = this.add.rectangle(-width * 0.42, 0, 24, 24, 0xffc857, 0.96);
+    core.setAngle(45);
+
+    this.bossHpText = this.add.text(-width * 0.3, -10, 'BOSS HP', {
+      color: '#f8f1de',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '16px',
+      fontStyle: '900',
+    }).setOrigin(0, 0.5);
+
+    this.bossMetaText = this.add.text(-width * 0.3, 12, 'CENTER LANES', {
+      color: '#ffccb8',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '12px',
+      fontStyle: '800',
+    }).setOrigin(0, 0.5);
+
+    this.bossContainer.add([this.bossBody, core, this.bossHpText, this.bossMetaText]);
+    this.bossContainer.setDepth(6);
+    this.bossContainer.setVisible(false);
   }
 
   private createOverlayPanels(): void {
@@ -612,6 +716,115 @@ export class LanefoldScene extends Scene {
     ]);
 
     this.gameOverContainer.setVisible(false);
+
+    this.rewardContainer = this.createPanelContainer(
+      450,
+      690,
+      720,
+      520,
+      20,
+    );
+    this.rewardTitle = this.add.text(0, -200, 'Encounter Cleared', {
+      color: '#f8f1de',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '50px',
+      fontStyle: '900',
+      align: 'center',
+    }).setOrigin(0.5);
+    this.rewardSubtitle = this.add.text(0, -154, 'Choose one run upgrade. Utility choices overwrite the slot.', {
+      color: '#bac6d0',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '18px',
+      fontStyle: '600',
+      align: 'center',
+    }).setOrigin(0.5);
+
+    this.rewardContainer.add([this.rewardTitle, this.rewardSubtitle]);
+
+    [-220, 0, 220].forEach((x, index) => {
+      const card = this.createRewardCard(x, 42, index);
+      this.rewardCards.push(card);
+      this.rewardContainer.add(card.container);
+    });
+    this.rewardContainer.setVisible(false);
+  }
+
+  private createRewardCard(
+    x: number,
+    y: number,
+    index: number,
+  ): {
+    container: Phaser.GameObjects.Container;
+    body: Phaser.GameObjects.Rectangle;
+    categoryText: Phaser.GameObjects.Text;
+    nameText: Phaser.GameObjects.Text;
+    descriptionText: Phaser.GameObjects.Text;
+  } {
+    const container = this.add.container(x, y);
+    const body = this.add.rectangle(0, 0, 194, 260, 0x13202b, 0.96);
+    body.setStrokeStyle(2, 0x63d0c7, 0.55);
+
+    const categoryText = this.add.text(0, -96, 'CATEGORY', {
+      color: '#8fe3dc',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '14px',
+      fontStyle: '900',
+      align: 'center',
+    }).setOrigin(0.5);
+
+    const nameText = this.add.text(0, -46, 'Reward', {
+      color: '#f8f1de',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '25px',
+      fontStyle: '900',
+      align: 'center',
+      wordWrap: { width: 160 },
+    }).setOrigin(0.5);
+
+    const descriptionText = this.add.text(0, 42, 'Description', {
+      color: '#d9dfdf',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '17px',
+      fontStyle: '600',
+      align: 'center',
+      lineSpacing: 5,
+      wordWrap: { width: 156 },
+    }).setOrigin(0.5);
+
+    const keyText = this.add.text(0, 110, `Press ${index + 1}`, {
+      color: '#091018',
+      backgroundColor: '#63d0c7',
+      fontFamily: '"Avenir Next", "Trebuchet MS", sans-serif',
+      fontSize: '14px',
+      fontStyle: '900',
+      padding: { x: 10, y: 4 },
+    }).setOrigin(0.5);
+
+    container.add([body, categoryText, nameText, descriptionText, keyText]);
+    container.setSize(194, 260);
+    container.setInteractive(
+      new Phaser.Geom.Rectangle(-97, -130, 194, 260),
+      Phaser.Geom.Rectangle.Contains,
+    );
+    container.on('pointerover', () => {
+      body.setFillStyle(0x183040, 0.98);
+      body.setStrokeStyle(3, 0x9af2ea, 0.85);
+    });
+    container.on('pointerout', () => {
+      body.setFillStyle(0x13202b, 0.96);
+      body.setStrokeStyle(2, 0x63d0c7, 0.55);
+    });
+    container.on('pointerup', () => {
+      this.handleRewardChoice(index);
+    });
+
+    return {
+      container,
+      body,
+      categoryText,
+      nameText,
+      descriptionText,
+    };
   }
 
   private createPanelContainer(
@@ -689,6 +902,14 @@ export class LanefoldScene extends Scene {
     this.run.move(direction);
   }
 
+  private handleRewardChoice(index: number): void {
+    this.run.selectReward(index);
+  }
+
+  private handleUtility(): void {
+    this.run.activateUtility();
+  }
+
   private restartRun(): void {
     this.run.restart();
   }
@@ -726,6 +947,7 @@ export class LanefoldScene extends Scene {
     this.renderThreatTracks();
     this.renderHud();
     this.renderBoardState();
+    this.renderBoss();
     this.renderEnemies();
     this.renderOverlays();
   }
@@ -742,6 +964,11 @@ export class LanefoldScene extends Scene {
   private renderThreatTracks(): void {
     const mode = this.run.getMode();
     const state = this.run.getState();
+    const attackProfile = computeLaneAttackProfile(
+      state.board,
+      state.modifiers,
+      state.boss,
+    );
 
     for (let lane = 0; lane < BOARD_WIDTH; lane += 1) {
       const threat = this.getLaneThreat(lane);
@@ -778,17 +1005,27 @@ export class LanefoldScene extends Scene {
       this.laneThreatTexts[lane]?.setColor(this.threatTextColor(threat.level));
       this.laneThreatTexts[lane]?.setText(this.formatLaneThreat(threat));
       this.laneAttackTexts[lane]?.setAlpha(mode === 'title' ? 0.26 : 0.8);
-      this.laneAttackTexts[lane]?.setText(`ATK ${this.getColumnAttackTotal(lane)}`);
+      this.laneAttackTexts[lane]?.setText(
+        this.formatLaneAttackLabel(
+          lane,
+          attackProfile.totalDamage[lane] ?? 0,
+          attackProfile.bossEffectiveDamage[lane] ?? 0,
+        ),
+      );
       this.laneAttackTexts[lane]?.setColor(
-        this.getColumnAttackTotal(lane) > 0 ? '#a8e6df' : '#536879',
+        (attackProfile.totalDamage[lane] ?? 0) > 0 ? '#a8e6df' : '#536879',
       );
 
       for (let step = 0; step < LANEFOLD_CONFIG.loss.breachProgress; step += 1) {
         const stepRect = this.laneStepRects[lane]?.[step];
-        const stepHasEnemy = (state.lanes[lane] ?? []).some(
+        const stepHasNormalEnemy = (state.lanes[lane] ?? []).some(
           (enemy) =>
             Math.min(LANEFOLD_CONFIG.loss.breachProgress - 1, enemy.progress) === step,
         );
+        const stepHasBoss =
+          state.boss?.occupiedLanes.includes(lane) &&
+          Math.min(LANEFOLD_CONFIG.loss.breachProgress - 1, state.boss.progress) === step;
+        const stepHasEnemy = stepHasNormalEnemy || stepHasBoss;
         const nearEdge = step === LANEFOLD_CONFIG.loss.breachProgress - 1;
         const stepAlpha = stepHasEnemy ? 0.88 : nearEdge ? 0.48 : 0.32;
 
@@ -810,7 +1047,20 @@ export class LanefoldScene extends Scene {
   }
 
   private getLaneThreat(laneIndex: number): LaneThreat {
-    const enemies = this.run.getState().lanes[laneIndex] ?? [];
+    const state = this.run.getState();
+    const boss = state.boss;
+
+    if (boss?.occupiedLanes.includes(laneIndex)) {
+      const minTurns = bossRemainingTurns(boss);
+
+      return {
+        level: dangerLevelForTurns(minTurns),
+        minTurns,
+        frontEnemyId: boss.id,
+      };
+    }
+
+    const enemies = state.lanes[laneIndex] ?? [];
 
     if (enemies.length === 0) {
       return {
@@ -832,11 +1082,18 @@ export class LanefoldScene extends Scene {
     };
   }
 
-  private getColumnAttackTotal(laneIndex: number): number {
-    return this.run.getState().board.reduce((total, row) => {
-      const tile = row[laneIndex];
-      return total + (tile ? tileDisplayValue(tile.rank) : 0);
-    }, 0);
+  private formatLaneAttackLabel(
+    laneIndex: number,
+    totalDamage: number,
+    bossEffectiveDamage: number,
+  ): string {
+    const boss = this.run.getState().boss;
+
+    if (boss && !boss.occupiedLanes.includes(laneIndex)) {
+      return `SUP ${bossEffectiveDamage}`;
+    }
+
+    return `ATK ${totalDamage}`;
   }
 
   private getGlobalThreat(): LaneThreat & { lane: number | null } {
@@ -904,10 +1161,11 @@ export class LanefoldScene extends Scene {
       .slice()
       .sort((a, b) => a.lane - b.lane)
       .slice(0, 2)
-      .map(
-        (attack) =>
-          `L${attack.lane + 1} ATK ${attack.laneDamage}: HP ${attack.hpBefore}->${attack.hpAfter}`,
-      );
+      .map((attack) => {
+        const prefix = attack.source === 'overcharge' ? 'OVR' : attack.support ? 'SUP' : 'ATK';
+        const target = attack.target === 'boss' ? 'BOSS' : 'HP';
+        return `L${attack.lane + 1} ${prefix} ${attack.laneDamage}: ${target} ${attack.hpBefore}->${attack.hpAfter}`;
+      });
     const overflow = attacks.length > parts.length ? ` +${attacks.length - parts.length} lanes` : '';
 
     return `${parts.join(' | ')}${overflow} // ${totalDamage} dmg`;
@@ -918,20 +1176,32 @@ export class LanefoldScene extends Scene {
     const state = this.run.getState();
     const hudAlpha = mode === 'title' ? 0 : 1;
     const globalThreat = this.getGlobalThreat();
+    const upcomingEncounter = state.encounterType
+      ? `${state.encounterType.toUpperCase()} NEXT`
+      : '';
+    const normalStep =
+      state.phase === 'normal'
+        ? ` ${Math.min(state.phaseTurn + 1, normalTurnCount())}/${normalTurnCount()}`
+        : '';
 
     this.turnText.setText(`TURN ${state.turn}`);
     this.pressureText.setText(
-      globalThreat.lane === null
+      state.phase === 'warning' && upcomingEncounter
+        ? `WARN ${upcomingEncounter}`
+        : globalThreat.lane === null
         ? 'DANGER CLEAR'
         : `DANGER L${globalThreat.lane + 1} T-${globalThreat.minTurns}`,
     );
-    this.difficultyText.setText(`Tier ${state.difficulty}`);
+    this.difficultyText.setText(`Tier ${state.tier} // ${formatPhase(state.phase)}${normalStep}`);
     this.scoreText.setText(`Score ${state.score}`);
     this.turnText.setAlpha(hudAlpha);
     this.pressureText.setAlpha(hudAlpha);
     this.difficultyText.setAlpha(hudAlpha);
     this.scoreText.setAlpha(mode === 'title' ? 0 : 0.72);
-    this.pressureText.setColor(this.threatTextColor(globalThreat.level));
+    this.pressureText.setColor(
+      state.phase === 'warning' ? '#ffccb8' : this.threatTextColor(globalThreat.level),
+    );
+    this.renderUtilityHud(mode);
 
     if (mode === 'title') {
       this.statusText.setText('Compact lane tracks show HP and turns-to-breach.');
@@ -942,6 +1212,14 @@ export class LanefoldScene extends Scene {
     if (mode === 'gameover') {
       this.statusText.setText(formatLoss(this.run.getGameOverReason()));
       this.hintText.setText('Press Enter or tap Restart to begin a fresh run.');
+      return;
+    }
+
+    if (mode === 'reward') {
+      this.statusText.setText('Choose one reward. Board and remaining lanes carry forward.');
+      this.statusText.setColor('#f5efdd');
+      this.statusText.setAlpha(0.76);
+      this.hintText.setText('Press 1 / 2 / 3 or click a reward card.');
       return;
     }
 
@@ -956,12 +1234,34 @@ export class LanefoldScene extends Scene {
       this.statusText.setText(formatLoss(lastSummary.lossReason));
       this.statusText.setColor('#ffbf9f');
       this.statusText.setAlpha(0.82);
+    } else if (lastSummary?.encounterStarted === 'boss') {
+      this.statusText.setText(
+        `boss breach vector formed // absorbed ${lastSummary.absorbedHp ?? 0} normal HP`,
+      );
+      this.statusText.setColor('#ffccb8');
+      this.statusText.setAlpha(0.82);
+    } else if (lastSummary?.encounterStarted === 'elite') {
+      this.statusText.setText('elite signal entered the lanes // no normal spawn this turn');
+      this.statusText.setColor('#f7d69a');
+      this.statusText.setAlpha(0.78);
+    } else if (lastSummary?.advanceFrozen) {
+      this.statusText.setText('Emergency Freeze stopped enemy advance for this turn.');
+      this.statusText.setColor('#b6ebe8');
+      this.statusText.setAlpha(0.82);
     } else if (lastSummary?.changed) {
       this.statusText.setText(
         `last move: ${this.formatCombatSummary(lastSummary.attacks)} // +${lastSummary.scoreGain}`,
       );
       this.statusText.setColor('#f5efdd');
       this.statusText.setAlpha(0.58);
+    } else if (state.phase === 'warning') {
+      this.statusText.setText('Warning turn: no normal spawn, but existing enemies still advance.');
+      this.statusText.setColor('#ffccb8');
+      this.statusText.setAlpha(0.72);
+    } else if (state.phase === 'boss') {
+      this.statusText.setText('Boss HP is shared across center lanes. Edge lanes deal 50% support.');
+      this.statusText.setColor('#ffccb8');
+      this.statusText.setAlpha(0.7);
     } else {
       this.statusText.setText('Each board column fires into the same numbered lane.');
       this.statusText.setColor('#f5efdd');
@@ -969,8 +1269,48 @@ export class LanefoldScene extends Scene {
     }
 
     this.hintText.setText(
-      'Arrow keys or swipe to shift. Matching values merge. Any lane breach ends the run.',
+      state.utilitySlot
+        ? 'Arrow keys or swipe to shift. Press U or tap Utility to activate the held utility.'
+        : 'Arrow keys or swipe to shift. Matching values merge. Any lane breach ends the run.',
     );
+  }
+
+  private renderUtilityHud(mode: string): void {
+    const state = this.run.getState();
+    const hidden = mode === 'title' || mode === 'gameover';
+
+    this.utilityBack.setAlpha(hidden ? 0 : 0.92);
+    this.utilityText.setAlpha(hidden ? 0 : 1);
+
+    if (hidden) {
+      this.utilityBack.disableInteractive();
+      return;
+    }
+
+    if (state.freezeAdvanceTurns > 0) {
+      this.utilityBack.disableInteractive();
+      this.utilityBack.setFillStyle(0x163847, 0.9);
+      this.utilityBack.setStrokeStyle(2, LANEFOLD_CONFIG.visuals.accentCool, 0.88);
+      this.utilityText.setText('FREEZE ARMED // NEXT ADVANCE');
+      this.utilityText.setColor('#b6ebe8');
+      return;
+    }
+
+    if (mode === 'playing' && state.utilitySlot) {
+      this.utilityBack.setInteractive({ useHandCursor: true });
+      this.utilityBack.setFillStyle(0x302416, 0.9);
+      this.utilityBack.setStrokeStyle(2, LANEFOLD_CONFIG.visuals.accentWarm, 0.88);
+      this.utilityText.setText(`UTILITY [U] ${state.utilitySlot.name}`);
+      this.utilityText.setColor('#ffe6b8');
+      return;
+    }
+
+    this.utilityBack.disableInteractive();
+    this.utilityBack.setFillStyle(0x10202b, 0.62);
+    this.utilityBack.setStrokeStyle(2, 0x365269, 0.42);
+    this.utilityText.setText('UTILITY EMPTY');
+    this.utilityText.setColor(LANEFOLD_CONFIG.visuals.textMuted);
+    this.utilityText.setAlpha(hidden ? 0 : 0.62);
   }
 
   private renderBoardState(): void {
@@ -1015,6 +1355,40 @@ export class LanefoldScene extends Scene {
         label?.setScale(1 + pulse * 0.05);
       }
     }
+  }
+
+  private renderBoss(): void {
+    const state = this.run.getState();
+    const boss = state.boss;
+
+    if (!boss || this.run.getMode() === 'title') {
+      this.bossContainer.setVisible(false);
+      return;
+    }
+
+    const slot = Math.min(
+      LANEFOLD_CONFIG.loss.breachProgress - 1,
+      Math.max(0, boss.progress),
+    );
+    const pulse = this.run.getEnemyPulse(boss.id);
+    const y =
+      this.layout.trackTop +
+      slot * (this.layout.trackStepHeight + this.layout.trackStepGap) +
+      this.layout.trackStepHeight * 0.5;
+
+    this.bossContainer.setVisible(true);
+    this.bossContainer.setPosition(this.getLaneCenter(2), y);
+    this.bossContainer.setScale(1 + pulse * 0.06);
+    this.bossBody.setFillStyle(0x1b1016, 0.94);
+    this.bossBody.setStrokeStyle(
+      bossRemainingTurns(boss) <= 1 ? 4 : 3,
+      bossRemainingTurns(boss) <= 1 ? 0xff3f3f : LANEFOLD_CONFIG.visuals.accentAlert,
+      0.9,
+    );
+    this.bossHpText.setText(`BOSS HP ${boss.hp}/${boss.maxHp}`);
+    this.bossMetaText.setText(
+      `T-${bossRemainingTurns(boss)} // center lanes // edges support 50%`,
+    );
   }
 
   private renderEnemies(): void {
@@ -1142,24 +1516,71 @@ export class LanefoldScene extends Scene {
 
     this.titleContainer.setVisible(mode === 'title');
     this.gameOverContainer.setVisible(mode === 'gameover');
+    this.rewardContainer.setVisible(mode === 'reward');
+
+    if (mode === 'reward') {
+      this.renderRewardChoices(state.rewardChoices);
+      return;
+    }
 
     if (mode !== 'gameover') {
       return;
     }
 
     const breachedLane = this.run.getLastSummary()?.breachedLane;
+    const breachedByBoss = this.run.getLastSummary()?.breachedByBoss;
     const lossTitle =
-      state.lossReason === 'lane_breach' && breachedLane !== null && breachedLane !== undefined
-        ? `Lane ${breachedLane + 1} breached`
-        : formatLoss(state.lossReason);
+      state.lossReason === 'lane_breach' && breachedByBoss
+        ? 'Boss breached center lanes'
+        : state.lossReason === 'lane_breach' && breachedLane !== null && breachedLane !== undefined
+          ? `Lane ${breachedLane + 1} breached`
+          : formatLoss(state.lossReason);
     const lossCause =
-      state.lossReason === 'lane_breach' && breachedLane !== null && breachedLane !== undefined
-        ? `An enemy crossed the breach edge in lane ${breachedLane + 1}.`
-        : 'The relay grid has no safe shift left.';
+      state.lossReason === 'lane_breach' && breachedByBoss
+        ? 'The boss crossed the shared breach edge across the center lanes.'
+        : state.lossReason === 'lane_breach' && breachedLane !== null && breachedLane !== undefined
+          ? `An enemy crossed the breach edge in lane ${breachedLane + 1}.`
+          : 'The relay grid has no safe shift left.';
 
     this.gameOverTitle.setText(lossTitle);
     this.gameOverBody.setText(
-      `${lossCause}\nScore ${state.score} // Turn ${state.turn}\nTier ${state.difficulty} // Pressure ${state.pressure}`,
+      `${lossCause}\nScore ${state.score} // Turn ${state.turn}\nTier ${state.tier} // Pressure ${state.pressure}`,
     );
+  }
+
+  private renderRewardChoices(rewards: RewardDefinition[]): void {
+    this.rewardTitle.setText(
+      `${formatPhase(this.run.getLastSummary()?.encounterCleared ?? 'reward')} Cleared`,
+    );
+    this.rewardSubtitle.setText(
+      `Choose one reward for Tier ${this.run.getState().tier + 1}. Utility rewards overwrite the held slot.`,
+    );
+
+    this.rewardCards.forEach((card, index) => {
+      const reward = rewards[index];
+
+      if (!reward) {
+        card.container.setVisible(false);
+        return;
+      }
+
+      card.container.setVisible(true);
+      card.categoryText.setText(reward.category.toUpperCase());
+      card.nameText.setText(reward.name);
+      card.descriptionText.setText(reward.description);
+      card.body.setStrokeStyle(2, this.rewardCategoryColor(reward.category), 0.72);
+    });
+  }
+
+  private rewardCategoryColor(category: RewardDefinition['category']): number {
+    switch (category) {
+      case 'economy':
+        return 0x8fe37d;
+      case 'combat':
+        return 0xffc857;
+      case 'utility':
+      default:
+        return 0x63d0c7;
+    }
   }
 }

@@ -15,10 +15,16 @@ Original prompt: Build an original browser game prototype in this repository for
 - 2026-04-15: Changed combat resolution from per-tile row-weighted strikes to one summed column attack per lane. Combat events now report lane attack total plus enemy HP before/after damage.
 - 2026-04-15: Started pacing adjustment to make enemies breach at progress 6 instead of 5, with a 6-step threat track and a slightly smaller/lower board layout. HP tuning and Tier behavior intentionally left unchanged.
 - 2026-04-15: Verified the pacing adjustment in browser. The required Playwright client still produced black WebGL canvas PNGs, so supplemental full-page Playwright screenshots were used for visual inspection. State output confirmed new enemies at `T-6`, lane breach at progress `6`, no console errors, and readable 6-step tracks after HUD spacing tweaks.
+- 2026-04-16: Added a tier loop with configurable 5-turn normal spawn pattern, 1 warning turn, elite encounters, every-3rd-tier boss encounters, post-encounter reward choice screens, persistent combat/economy modifiers, and a single stored utility slot.
+- 2026-04-16: Boss encounters now replace remaining normal enemies by absorbing their total remaining HP into shared boss HP across the center 3 lanes. Edge lanes contribute 50% support damage to the boss and the UI labels those lanes as `SUP`.
+- 2026-04-16: Implemented initial reward pool: Seeder, Overcharge, Pierce, Splash Matrix, and Emergency Freeze. Reward categories remain data-driven via `src/game/core/rewards.ts`.
+- 2026-04-16: Verified the progression update in a live browser with Playwright. The required bundled client confirmed normal gameplay state and elite reachability; a second Playwright pass used controlled in-browser state setup to deterministically verify tier-3 boss absorption, side-lane support damage, reward selection, utility storage, and freeze activation without console errors.
+- 2026-04-16: Added deterministic browser checks for immediate reward effects as well: Seeder produced an extra spawned `2` after the first merge of a turn, and Pierce carried an 8-damage lane attack through a 3-HP front enemy into the next 10-HP enemy for 5 remaining HP.
 
 ## TODO
 
 - Optional polish pass: add bespoke move tweens and stronger enemy hit reactions.
-- Optional balance pass: tune early enemy HP and spawn counts for a slightly longer first wave after more playtesting with the new threat-track UI.
+- Balance follow-up: boss max HP is functional but likely the first system to retune after more organic runs; current MVP values favor system verification over final pacing.
+- Balance follow-up: if Splash Matrix and Pierce stack too efficiently on later runs, lane-density pressure may need a separate cap or enemy-side counterplay.
 - Optional asset pass: if `OPENAI_API_KEY` becomes available, generate concept textures or enemy emblems under `output/imagegen/`.
-- No new blockers from the 6-turn pacing pass.
+- No new blockers from the tier-loop pass. Remaining work is balance and presentation polish, not architecture.

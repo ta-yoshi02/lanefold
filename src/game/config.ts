@@ -39,6 +39,24 @@ export const LANEFOLD_CONFIG = {
   combat: {
     attackTimingMs: 140,
   },
+  progression: {
+    normalSpawnPattern: [1, 2, 2, 3, 3],
+    warningTurns: 1,
+    bossEveryNTiers: 3,
+  },
+  encounters: {
+    eliteHpMultiplier: 2.6,
+    bossHpMultiplier: 7.5,
+    bossCenterLanes: [1, 2, 3],
+    bossSpawnProgress: 0,
+    sideLaneSupportMultiplier: 0.5,
+  },
+  rewards: {
+    overchargeDamageFactor: 0.5,
+    splashThresholdValue: 32,
+    splashDamageFactor: 0.25,
+    emergencyFreezeTurns: 1,
+  },
   difficulty: {
     turnsPerStep: 5,
   },

@@ -1,8 +1,11 @@
 import { BOARD_HEIGHT, BOARD_WIDTH, LANEFOLD_CONFIG, tileDisplayValue } from '../config';
+import { computePressure } from '../core/enemies';
 import { createInitialRunState, resolvePlayerTurn } from '../core/resolveTurn';
+import { applyRewardToState } from '../core/rewards';
 import type {
   Direction,
   LossReason,
+  RewardDefinition,
   RunState,
   ScreenMode,
   TextSnapshot,
@@ -98,10 +101,14 @@ export class LanefoldRun {
         attacks: [],
         spawnedEnemies: [],
         spawnedTile: null,
+        extraSpawnedTile: null,
         scoreGain: 0,
         invalidMove: true,
         breachedLane: null,
+        breachedByBoss: false,
         lossReason: this.state.lossReason,
+        phaseBefore: this.state.phase,
+        phaseAfter: this.state.phase,
       };
     }
 
@@ -131,12 +138,64 @@ export class LanefoldRun {
       this.lanePulseMs[spawn.lane] = 260;
       this.enemyPulse.set(spawn.enemyId, 240);
     });
+    if (summary.encounterStarted === 'boss' && this.state.boss) {
+      this.enemyPulse.set(this.state.boss.id, 280);
+      this.state.boss.occupiedLanes.forEach((lane) => {
+        this.lanePulseMs[lane] = 260;
+      });
+    }
 
     if (summary.lossReason) {
       this.mode = 'gameover';
+    } else if (state.phase === 'reward') {
+      this.mode = 'reward';
     }
 
     return summary;
+  }
+
+  public selectReward(index: number): RewardDefinition | null {
+    if (this.mode !== 'reward') {
+      return null;
+    }
+
+    const reward = this.state.rewardChoices[index];
+
+    if (!reward) {
+      return null;
+    }
+
+    const rewardedState = applyRewardToState(this.state, reward);
+    this.state = {
+      ...rewardedState,
+      tier: rewardedState.tier + 1,
+      phase: 'normal',
+      phaseTurn: 0,
+      encounterType: null,
+      boss: null,
+      rewardChoices: [],
+      pressure: Math.round(computePressure(rewardedState.lanes, null)),
+    };
+    this.mode = 'playing';
+    this.lastSummary = null;
+    this.invalidMoveMs = 0;
+    return reward;
+  }
+
+  public activateUtility(): boolean {
+    if (this.mode !== 'playing' || !this.state.utilitySlot) {
+      return false;
+    }
+
+    this.state = {
+      ...this.state,
+      utilitySlot: null,
+      freezeAdvanceTurns: Math.max(
+        this.state.freezeAdvanceTurns,
+        LANEFOLD_CONFIG.rewards.emergencyFreezeTurns,
+      ),
+    };
+    return true;
   }
 
   public advanceTime(ms: number): void {
@@ -186,13 +245,39 @@ export class LanefoldRun {
         kind: enemy.kind,
       })),
     );
+    const boss = this.state.boss
+      ? {
+          hp: this.state.boss.hp,
+          maxHp: this.state.boss.maxHp,
+          progress: this.state.boss.progress,
+          turnsToBreach: Math.max(
+            0,
+            LANEFOLD_CONFIG.loss.breachProgress - this.state.boss.progress,
+          ),
+          occupiedLanes: [...this.state.boss.occupiedLanes],
+          absorbedHp: this.state.boss.absorbedHp,
+        }
+      : null;
 
     return {
       mode: this.mode,
       turn: this.state.turn,
+      tier: this.state.tier,
+      phase: this.state.phase,
+      phaseTurn: this.state.phaseTurn,
+      encounterType: this.state.encounterType,
       score: this.state.score,
       difficulty: this.state.difficulty,
       pressure: this.state.pressure,
+      boss,
+      modifiers: this.state.modifiers,
+      utilitySlot: this.state.utilitySlot,
+      rewardChoices: this.state.rewardChoices.map((reward) => ({
+        id: reward.id,
+        category: reward.category,
+        name: reward.name,
+        description: reward.description,
+      })),
       board,
       lanes,
       lastMove: this.lastSummary
@@ -209,11 +294,22 @@ export class LanefoldRun {
               hpBefore: attack.hpBefore,
               hpAfter: attack.hpAfter,
               destroyed: attack.destroyed,
+              target: attack.target,
+              source: attack.source,
+              support: attack.support,
             })),
             spawnedEnemies: this.lastSummary.spawnedEnemies.length,
             spawnedTile: this.lastSummary.spawnedTile,
+            extraSpawnedTile: this.lastSummary.extraSpawnedTile,
             breachedLane: this.lastSummary.breachedLane,
+            breachedByBoss: this.lastSummary.breachedByBoss,
             lossReason: this.lastSummary.lossReason,
+            phaseBefore: this.lastSummary.phaseBefore,
+            phaseAfter: this.lastSummary.phaseAfter,
+            encounterStarted: this.lastSummary.encounterStarted,
+            encounterCleared: this.lastSummary.encounterCleared,
+            advanceFrozen: this.lastSummary.advanceFrozen,
+            absorbedHp: this.lastSummary.absorbedHp,
           }
         : undefined,
       note:

@@ -81,6 +81,40 @@ export function spawnRandomTile(
   };
 }
 
+export function spawnTileWithRank(
+  grid: Grid,
+  nextId: number,
+  rng: () => number,
+  rank: number,
+): { grid: Grid; nextId: number; spawnedTile: TileSpawnEvent | null } {
+  const position = randomEmptyCell(grid, rng);
+
+  if (!position) {
+    return {
+      grid,
+      nextId,
+      spawnedTile: null,
+    };
+  }
+
+  const nextGrid = cloneGrid(grid);
+
+  nextGrid[position.row][position.col] = {
+    id: nextId,
+    rank,
+  };
+
+  return {
+    grid: nextGrid,
+    nextId: nextId + 1,
+    spawnedTile: {
+      row: position.row,
+      col: position.col,
+      rank,
+    },
+  };
+}
+
 function getLinePositions(index: number, direction: Direction): Position[] {
   const positions: Position[] = [];
 

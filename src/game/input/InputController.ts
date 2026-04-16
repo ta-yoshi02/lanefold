@@ -7,6 +7,8 @@ interface InputControllerOptions {
   getMode: () => ScreenMode;
   onDirection: (direction: Direction) => void;
   onConfirm: () => void;
+  onRewardChoice: (index: number) => void;
+  onUtility: () => void;
   onRestart: () => void;
   onToggleFullscreen: () => void;
 }
@@ -56,7 +58,17 @@ export class InputController {
         return;
       }
 
+      if (mode === 'reward' && ['1', '2', '3'].includes(key)) {
+        this.options.onRewardChoice(Number(key) - 1);
+        return;
+      }
+
       if (mode !== 'playing') {
+        return;
+      }
+
+      if (key.toLowerCase() === 'u') {
+        this.options.onUtility();
         return;
       }
 
