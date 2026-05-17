@@ -20,11 +20,13 @@ Original prompt: Build an original browser game prototype in this repository for
 - 2026-04-16: Implemented initial reward pool: Seeder, Overcharge, Pierce, Splash Matrix, and Emergency Freeze. Reward categories remain data-driven via `src/game/core/rewards.ts`.
 - 2026-04-16: Verified the progression update in a live browser with Playwright. The required bundled client confirmed normal gameplay state and elite reachability; a second Playwright pass used controlled in-browser state setup to deterministically verify tier-3 boss absorption, side-lane support damage, reward selection, utility storage, and freeze activation without console errors.
 - 2026-04-16: Added deterministic browser checks for immediate reward effects as well: Seeder produced an extra spawned `2` after the first merge of a turn, and Pierce carried an 8-damage lane attack through a 3-HP front enemy into the next 10-HP enemy for 5 remaining HP.
+- 2026-04-30: Retuned enemy HP pacing so HP scales from current Tier plus local normal-phase turn instead of cumulative run turn. Elite and boss multipliers were reduced, and bosses now absorb a configurable fraction of remaining enemy HP. `npm run build` passes after the balance change.
+- 2026-04-30: Verified the HP retune in a live browser with the bundled Playwright client and a supplemental full-page Playwright screenshot because the bundled canvas capture still renders black PNGs in this WebGL setup. State output showed Tier 1 normal enemy HP in the 7-11 band and elite HP around 20, with no console errors.
 
 ## TODO
 
 - Optional polish pass: add bespoke move tweens and stronger enemy hit reactions.
-- Balance follow-up: boss max HP is functional but likely the first system to retune after more organic runs; current MVP values favor system verification over final pacing.
+- Balance follow-up: run organic Tier 3+ playtests after the HP pacing retune and adjust `hpScalePerTier`, `bossHpMultiplier`, and `bossAbsorbedHpFactor` together if bosses feel too soft or too slow.
 - Balance follow-up: if Splash Matrix and Pierce stack too efficiently on later runs, lane-density pressure may need a separate cap or enemy-side counterplay.
 - Optional asset pass: if `OPENAI_API_KEY` becomes available, generate concept textures or enemy emblems under `output/imagegen/`.
 - No new blockers from the tier-loop pass. Remaining work is balance and presentation polish, not architecture.

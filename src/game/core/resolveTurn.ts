@@ -106,7 +106,6 @@ function resolveProgressionAfterAdvance(params: {
   encounterType: EncounterType | null;
   lanes: Lanes;
   nextId: number;
-  turn: number;
   rng: () => number;
   encounterCleared: EncounterType | null;
 }): {
@@ -127,7 +126,6 @@ function resolveProgressionAfterAdvance(params: {
     tier,
     encounterType,
     rng,
-    turn,
     encounterCleared,
   } = params;
   let nextPhase = phase;
@@ -158,7 +156,13 @@ function resolveProgressionAfterAdvance(params: {
 
   if (phase === 'normal') {
     const spawnCount = normalSpawnCountForPhaseTurn(phaseTurn);
-    const spawn = spawnEnemyBatch(nextLanes, turn, nextId, rng, spawnCount);
+    const spawn = spawnEnemyBatch(
+      nextLanes,
+      { tier, phaseTurn },
+      nextId,
+      rng,
+      spawnCount,
+    );
     nextLanes = spawn.lanes;
     spawnedEnemies = spawn.spawnedEnemies;
     nextId = spawn.nextId;
@@ -179,14 +183,14 @@ function resolveProgressionAfterAdvance(params: {
       nextEncounterType = encounterStarted;
 
       if (encounterStarted === 'elite') {
-        const eliteSpawn = spawnEliteEnemy(nextLanes, turn, nextId, rng);
+        const eliteSpawn = spawnEliteEnemy(nextLanes, tier, nextId, rng);
         nextLanes = eliteSpawn.lanes;
         spawnedEnemies = eliteSpawn.spawnedEnemies;
         nextId = eliteSpawn.nextId;
       } else {
         absorbedHp = sumRemainingEnemyHp(nextLanes);
         nextLanes = createEmptyLanes();
-        const bossSpawn = createBoss(turn, nextId, absorbedHp);
+        const bossSpawn = createBoss(tier, nextId, absorbedHp);
         bossCreated = bossSpawn.boss;
         nextId = bossSpawn.nextId;
       }
@@ -308,7 +312,6 @@ export function resolvePlayerTurn(
       encounterType,
       lanes,
       nextId: nextEntityId,
-      turn,
       rng,
       encounterCleared,
     });

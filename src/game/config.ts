@@ -31,8 +31,9 @@ export const LANEFOLD_CONFIG = {
   },
   enemies: {
     hpBase: 6,
-    hpScalePerTurn: 1.5,
-    hpVariance: 5,
+    hpScalePerTier: 3,
+    hpScalePerPhaseTurn: 0.75,
+    hpVariance: 3,
     kindPool: enemyKinds,
     killScoreFactor: 5,
   },
@@ -45,8 +46,9 @@ export const LANEFOLD_CONFIG = {
     bossEveryNTiers: 3,
   },
   encounters: {
-    eliteHpMultiplier: 2.6,
-    bossHpMultiplier: 7.5,
+    eliteHpMultiplier: 2.2,
+    bossHpMultiplier: 4,
+    bossAbsorbedHpFactor: 0.5,
     bossCenterLanes: [1, 2, 3],
     bossSpawnProgress: 0,
     sideLaneSupportMultiplier: 0.5,

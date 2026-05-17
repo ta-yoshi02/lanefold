@@ -27,6 +27,11 @@ export interface LaneAttackProfile {
   bossEffectiveDamage: number[];
 }
 
+interface EnemyHpPacing {
+  tier: number;
+  phaseTurn: number;
+}
+
 function cloneEnemy(enemy: Enemy): Enemy {
   return { ...enemy };
 }
@@ -55,18 +60,36 @@ function spawnCountForTurn(turn: number): number {
   );
 }
 
-function enemyHp(turn: number, rng: () => number): number {
-  const variance = Math.floor(rng() * (LANEFOLD_CONFIG.enemies.hpVariance + 1));
-  return Math.round(
-    LANEFOLD_CONFIG.enemies.hpBase + turn * LANEFOLD_CONFIG.enemies.hpScalePerTurn + variance,
+function enemyHpPacingFromTurn(turn: number): EnemyHpPacing {
+  const cycleLength =
+    LANEFOLD_CONFIG.progression.normalSpawnPattern.length +
+    LANEFOLD_CONFIG.progression.warningTurns +
+    1;
+  const cycleIndex = Math.max(0, turn - 1);
+
+  return {
+    tier: 1 + Math.floor(cycleIndex / cycleLength),
+    phaseTurn: cycleIndex % cycleLength,
+  };
+}
+
+function enemyHpBudget(pacing: EnemyHpPacing): number {
+  return (
+    LANEFOLD_CONFIG.enemies.hpBase +
+    Math.max(0, pacing.tier - 1) * LANEFOLD_CONFIG.enemies.hpScalePerTier +
+    Math.max(0, pacing.phaseTurn) * LANEFOLD_CONFIG.enemies.hpScalePerPhaseTurn
   );
 }
 
-function bossHp(turn: number, absorbedHp: number): number {
+function enemyHp(pacing: EnemyHpPacing, rng: () => number): number {
+  const variance = Math.floor(rng() * (LANEFOLD_CONFIG.enemies.hpVariance + 1));
+  return Math.round(enemyHpBudget(pacing) + variance);
+}
+
+function bossHp(pacing: EnemyHpPacing, absorbedHp: number): number {
   return Math.round(
-    LANEFOLD_CONFIG.enemies.hpBase +
-      turn * LANEFOLD_CONFIG.enemies.hpScalePerTurn * LANEFOLD_CONFIG.encounters.bossHpMultiplier +
-      absorbedHp,
+    enemyHpBudget(pacing) * LANEFOLD_CONFIG.encounters.bossHpMultiplier +
+      absorbedHp * LANEFOLD_CONFIG.encounters.bossAbsorbedHpFactor,
   );
 }
 
@@ -448,12 +471,12 @@ export function spawnEnemies(
   const nextLanes = cloneLanes(lanes).map(sortLane);
   const batchSize = spawnCountForTurn(turn);
 
-  return spawnEnemyBatch(nextLanes, turn, nextId, rng, batchSize);
+  return spawnEnemyBatch(nextLanes, enemyHpPacingFromTurn(turn), nextId, rng, batchSize);
 }
 
 export function spawnEnemyBatch(
   lanes: Lanes,
-  turn: number,
+  pacing: EnemyHpPacing,
   nextId: number,
   rng: () => number,
   batchSize: number,
@@ -478,7 +501,7 @@ export function spawnEnemyBatch(
 
   for (let index = 0; index < Math.min(batchSize, chosenLanes.length); index += 1) {
     const lane = chosenLanes[index] ?? 0;
-    const hp = Math.round(enemyHp(turn, rng) * hpMultiplier);
+    const hp = Math.round(enemyHp(pacing, rng) * hpMultiplier);
     const kind = forcedKind ?? pick<EnemyKind>(LANEFOLD_CONFIG.enemies.kindPool, rng);
     const enemy: Enemy = {
       id: currentId,
@@ -508,13 +531,13 @@ export function spawnEnemyBatch(
 
 export function spawnEliteEnemy(
   lanes: Lanes,
-  turn: number,
+  tier: number,
   nextId: number,
   rng: () => number,
 ): SpawnResolution {
   return spawnEnemyBatch(
     lanes,
-    turn,
+    { tier, phaseTurn: 0 },
     nextId,
     rng,
     1,
@@ -531,11 +554,14 @@ export function sumRemainingEnemyHp(lanes: Lanes): number {
 }
 
 export function createBoss(
-  turn: number,
+  tier: number,
   nextId: number,
   absorbedHp: number,
 ): { boss: BossState; nextId: number } {
-  const hp = bossHp(turn, absorbedHp);
+  const hp = bossHp(
+    { tier, phaseTurn: LANEFOLD_CONFIG.progression.normalSpawnPattern.length },
+    absorbedHp,
+  );
 
   return {
     boss: {

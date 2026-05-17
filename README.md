@@ -81,7 +81,7 @@ Key values to adjust:
 - initial tile count
 - enemy spawn interval and burst size
 - enemy advance per turn
-- enemy HP base, scaling, and variance
+- enemy HP base, tier/local-phase scaling, and variance
 - attack timing and row multipliers
 - merge growth and scoring
 - loss conditions (`loseOnLaneBreach`, `loseOnGridLock`)
