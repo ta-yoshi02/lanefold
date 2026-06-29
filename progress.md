@@ -22,10 +22,14 @@ Original prompt: Build an original browser game prototype in this repository for
 - 2026-04-16: Added deterministic browser checks for immediate reward effects as well: Seeder produced an extra spawned `2` after the first merge of a turn, and Pierce carried an 8-damage lane attack through a 3-HP front enemy into the next 10-HP enemy for 5 remaining HP.
 - 2026-04-30: Retuned enemy HP pacing so HP scales from current Tier plus local normal-phase turn instead of cumulative run turn. Elite and boss multipliers were reduced, and bosses now absorb a configurable fraction of remaining enemy HP. `npm run build` passes after the balance change.
 - 2026-04-30: Verified the HP retune in a live browser with the bundled Playwright client and a supplemental full-page Playwright screenshot because the bundled canvas capture still renders black PNGs in this WebGL setup. State output showed Tier 1 normal enemy HP in the 7-11 band and elite HP around 20, with no console errors.
+- 2026-06-29: Started a de-AI visual/theme pass in response to feedback that the game looked like a generic AI-made concept. Direction is a concrete parcel-yard/depot course, borrowing only readability patterns from platform games and mobile puzzle games without copying any protected brand, UI, colors, characters, or tile look.
+- 2026-06-29: Reworked the central visual palette, browser background, title copy, board slots, lane tracks, breach edge, enemy cards, utility badge, and reward cards around the depot/parcel-yard theme. Added `.logs/2026-06-29-de-ai-theme-pass.md` with the design decision.
+- 2026-06-29: Verified the de-AI theme pass with `npm run build`, the required bundled Playwright client, and supplemental full-page Playwright screenshots because the bundled WebGL canvas screenshot still renders black. Final state reached turn 4 in normal play with no console errors; title and gameplay screenshots were visually inspected.
 
 ## TODO
 
 - Optional polish pass: add bespoke move tweens and stronger enemy hit reactions.
+- Optional de-AI follow-up: add small procedural parcel tape marks, lane arrows, and reward icons once the current theme is verified in browser.
 - Balance follow-up: run organic Tier 3+ playtests after the HP pacing retune and adjust `hpScalePerTier`, `bossHpMultiplier`, and `bossAbsorbedHpFactor` together if bosses feel too soft or too slow.
 - Balance follow-up: if Splash Matrix and Pierce stack too efficiently on later runs, lane-density pressure may need a separate cap or enemy-side counterplay.
 - Optional asset pass: if `OPENAI_API_KEY` becomes available, generate concept textures or enemy emblems under `output/imagegen/`.

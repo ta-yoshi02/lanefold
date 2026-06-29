@@ -36,6 +36,12 @@ Build a playable browser prototype of **Lanefold**, a 5x5 sliding-merge tactics 
 5. Placeholder visual pass and balancing.
 6. Browser verification loops and polish.
 
+## Pop UI Pass
+1. Centralize brighter arcade colors in `LANEFOLD_CONFIG.visuals`.
+2. Rework the board, lane tracks, enemies, buttons, and reward cards around a toy-like arcade grid direction.
+3. Keep gameplay information dense and readable: turn, danger, tier, score, lane attack, and breach state must remain visible.
+4. Verify title, gameplay, reward, and game-over states in a live browser after the pass.
+
 ## Risk Notes
 - Phaser 4 is still on RC builds, so the first pass will stay close to the stable Scene/GameObject APIs.
 - The prototype will use deterministic turn logic and lightweight visual timers instead of heavy tween choreography.
